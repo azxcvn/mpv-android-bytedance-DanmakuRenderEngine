@@ -9,18 +9,15 @@ import com.danmaku.flow.bridge.api.DanmakuRenderConfig
 import com.danmaku.flow.bridge.api.DanmakuRenderer
 import com.danmaku.flow.model.DanmakuRenderItem
 import com.danmaku.flow.model.DanmakuType
+import com.danmaku.flow.model.FrameStats
 
 /**
- * Canvas 弹幕渲染器
+ * Canvas 弹幕渲染器（P1 帧预算版）
  *
  * 首版渲染实现，使用 Canvas + GlyphCache。
- * 对应融合方案 5.1 节和 9.1.1 第 5 步
+ * P1 增加帧预算监控与自动降级。
  *
- * 施工顺序（按方案建议）：
- * 1. 先让 drawText 版跑通位置 ✓
- * 2. 再补文本测量缓存 ✓
- * 3. 再补 GlyphCache 预烘焙 ✓
- * 4. 最后再补对象池和预算统计（P1）
+ * 对应融合方案 5.1 节和 9.2 第 6 项
  */
 class CanvasRenderer : DanmakuRenderer {
 
@@ -30,22 +27,37 @@ class CanvasRenderer : DanmakuRenderer {
     private val glyphCache = GlyphCache()
     private val measureCache = TextMeasureCache()
 
+    /** P1: 帧预算监控器 */
+    private val frameBudgetMonitor = FrameBudgetMonitor()
+
     /** 实际画布尺寸（每帧从 Canvas 获取） */
     var canvasWidth = 0
         private set
     var canvasHeight = 0
         private set
 
-    // 帧预算监控（P1 再细化）
-    private var lastRenderTimeNs = 0L
-    private var frameBudgetExceededCount = 0
-
     private val clearPaint = Paint().apply {
         isAntiAlias = true
     }
 
+    /** 复用的测量 Paint，避免每帧每条弹幕 new Paint */
+    private val measurePaint = Paint()
+
     override fun initialize(host: DanmakuOverlayHost) {
         this.host = host
+    }
+
+    fun prefetch(items: List<DanmakuRenderItem>, limit: Int = 24) {
+        var prefetched = 0
+        val seen = HashSet<String>()
+        for (item in items) {
+            if (prefetched >= limit) break
+            if (item.text.isBlank()) continue
+            val key = item.styleKey
+            if (!seen.add(key)) continue
+            glyphCache.prefetch(item.text, item.textSizePx, item.color, item.strokeWidthPx)
+            prefetched++
+        }
     }
 
     override fun render(frameTimeMs: Long, items: List<DanmakuRenderItem>) {
@@ -53,17 +65,22 @@ class CanvasRenderer : DanmakuRenderer {
         val canvas = h.lockCanvas() ?: return
 
         try {
-            // 记录实际画布尺寸
             canvasWidth = canvas.width
             canvasHeight = canvas.height
 
-            // 清空为透明
             canvas.drawColor(Color.TRANSPARENT, PorterDuff.Mode.CLEAR)
 
             val startTimeNs = System.nanoTime()
 
-            // 绘制所有弹幕
-            for (item in items) {
+            // P1: 降级时限制渲染数量
+            val renderItems = if (frameBudgetMonitor.isDegraded && items.size > 30) {
+                // 降级模式：只渲染前 30 条（优先保留已绘制的）
+                items.take(30)
+            } else {
+                items
+            }
+
+            for (item in renderItems) {
                 if (item.alpha <= 0f) continue
                 if (item.text.isBlank()) continue
 
@@ -73,7 +90,7 @@ class CanvasRenderer : DanmakuRenderer {
 
                 when (item.type) {
                     DanmakuType.ScrollRtl -> {
-                        // 从右向左滚动：x 由引擎计算
+                        // 滚动弹幕不需要居中，直接用 x 坐标，跳过测量
                         glyphCache.draw(
                             canvas,
                             item.text,
@@ -85,8 +102,7 @@ class CanvasRenderer : DanmakuRenderer {
                             effectiveAlpha
                         )
                     }
-                    DanmakuType.TopFixed -> {
-                        // 顶部居中
+                    DanmakuType.TopFixed, DanmakuType.BottomFixed -> {
                         val textWidth = measureTextWidth(item.text, effectiveTextSize)
                         val centerX = item.x - textWidth / 2f
                         glyphCache.draw(
@@ -100,27 +116,14 @@ class CanvasRenderer : DanmakuRenderer {
                             effectiveAlpha
                         )
                     }
-                    DanmakuType.BottomFixed -> {
-                        val textWidth = measureTextWidth(item.text, effectiveTextSize)
-                        val centerX = item.x - textWidth / 2f
-                        glyphCache.draw(
-                            canvas,
-                            item.text,
-                            centerX,
-                            item.y + effectiveTextSize,
-                            effectiveTextSize,
-                            item.color,
-                            effectiveStroke,
-                            effectiveAlpha
-                        )
-                    }
-                    DanmakuType.Special -> {
-                        // P0 不处理
-                    }
+                    DanmakuType.Special -> { }
                 }
             }
 
-            lastRenderTimeNs = System.nanoTime() - startTimeNs
+            // P1: 记录帧耗时
+            val renderTimeNs = System.nanoTime() - startTimeNs
+            frameBudgetMonitor.recordFrame(renderTimeNs)
+
         } finally {
             h.unlockCanvasAndPost(canvas)
         }
@@ -129,7 +132,6 @@ class CanvasRenderer : DanmakuRenderer {
     override fun updateConfig(config: DanmakuRenderConfig) {
         val oldScale = this.config.scale
         this.config = config
-        // 配置变化时清空缓存，渐进重建
         if (oldScale != config.scale) {
             glyphCache.clear()
             measureCache.clear()
@@ -139,17 +141,21 @@ class CanvasRenderer : DanmakuRenderer {
     override fun release() {
         glyphCache.clear()
         measureCache.clear()
+        frameBudgetMonitor.reset()
         host = null
     }
 
+    override fun getFrameStats(): FrameStats = frameBudgetMonitor.getStats()
+
+    /** 获取帧预算监控器引用（供引擎查询降级状态） */
+    fun getFrameBudgetMonitor(): FrameBudgetMonitor = frameBudgetMonitor
+
     private fun measureTextWidth(text: String, textSizePx: Float): Float {
-        val paint = Paint().apply {
-            this.textSize = textSizePx
-        }
-        val result = measureCache.measure(text, textSizePx, paint)
+        measurePaint.textSize = textSizePx
+        val result = measureCache.measure(text, textSizePx, measurePaint)
         return result.width
     }
 
-    /** 帧预算监控（P1 完善） */
-    fun getLastRenderTimeMs(): Float = lastRenderTimeNs / 1_000_000f
+    /** 获取最近一帧渲染耗时（ms） */
+    fun getLastRenderTimeMs(): Float = frameBudgetMonitor.lastFrameMs
 }

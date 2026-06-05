@@ -10,6 +10,7 @@ import com.danmaku.flow.engine.DanmakuTimelineEngine
 import com.danmaku.flow.model.GlobalDanmakuStyle
 import com.danmaku.flow.parser.BilibiliXmlParser
 import com.danmaku.flow.parser.DanmakuRepository
+import com.danmaku.flow.model.FrameStats
 import com.danmaku.flow.renderer.CanvasRenderer
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -19,10 +20,14 @@ import java.io.File
 import java.io.FileInputStream
 
 /**
- * 弹幕控制器实现
+ * 弹幕控制器实现（P1 工程强化版）
  *
- * 负责组装各模块并向宿主暴露 API。
- * 对应融合方案 7.2 节和 9.1.1 第 7 步
+ * P0 基础上增加：
+ * - 帧预算监控联动引擎降级
+ * - 低内存回调（对象池缩减）
+ * - 渐进式配置生效
+ *
+ * 对应融合方案 7.2 节和 9.2 第 3~7 项
  */
 class DanmakuControllerImpl(
     private val clockProvider: PlayerClockProvider,
@@ -74,10 +79,10 @@ class DanmakuControllerImpl(
             repository.load(items)
 
             withContext(Dispatchers.Main) {
-                // 初始化引擎
                 engine.initialize(repository, host.width(), host.height())
+                engine.onClockTick(clockProvider.currentPositionMs())
+                renderer.prefetch(engine.snapshot())
 
-                // 创建并启动时钟桥接
                 val bridge = MpvClockBridge(clockProvider, eventSource, engine)
                 clockBridge = bridge
 
@@ -85,6 +90,12 @@ class DanmakuControllerImpl(
                     onRender = { snapshot ->
                         if (visible) {
                             renderer.render(clockProvider.currentPositionMs(), snapshot)
+
+                            // P1: 帧预算监控 — 将降级状态同步给引擎
+                            val monitor = renderer.getFrameBudgetMonitor()
+                            if (engine is DanmakuTimelineEngine) {
+                                engine.setFrameBudgetDegraded(monitor.isDegraded)
+                            }
                         }
                     },
                     onCanvasSize = { Pair(renderer.canvasWidth, renderer.canvasHeight) }
@@ -118,9 +129,28 @@ class DanmakuControllerImpl(
     override fun setVisibility(visible: Boolean) {
         this.visible = visible
         if (!visible) {
-            overlayHost?.invalidateFrame() // 清空画布
+            overlayHost?.invalidateFrame()
         }
     }
+
+    /**
+     * P1: 低内存回调
+     *
+     * 在 Activity/Fragment 的 onTrimMemory 中调用，
+     * 通知引擎缩减对象池，释放缓存。
+     */
+    fun onTrimMemory() {
+        if (engine is DanmakuTimelineEngine) {
+            engine.onTrimMemory()
+        }
+    }
+
+    /**
+     * P1: 获取帧性能统计
+     *
+     * 可用于调试面板显示当前帧耗时、是否降级等信息。
+     */
+    fun getFrameStats(): FrameStats = renderer.getFrameStats()
 
     override fun release() {
         clockBridge?.stop()

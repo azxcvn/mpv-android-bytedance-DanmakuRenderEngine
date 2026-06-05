@@ -1,6 +1,7 @@
 package com.danmakuplayer.manager
 
 import android.content.Context
+import android.os.SystemClock
 import android.view.Surface
 import `is`.xyz.mpv.MPV
 import `is`.xyz.mpv.MPVNode
@@ -45,8 +46,36 @@ class MpvPlayerManager(private val context: Context) :
     private val _isAnime4KEnabled = MutableStateFlow(false)
     val isAnime4KEnabled: StateFlow<Boolean> = _isAnime4KEnabled.asStateFlow()
 
+    private var clockAnchorPositionMs = 0L
+    private var clockAnchorRealtimeNs = 0L
+    private var lastClockOutputMs = 0L
+    private var lastClockOutputRealtimeNs = 0L
+
     // PlayerClockProvider 实现
-    override fun currentPositionMs(): Long = _currentPositionMs.value
+    override fun currentPositionMs(): Long {
+        val nowNs = SystemClock.elapsedRealtimeNanos()
+        if (!_isPlaying.value) {
+            return updateClockOutput(_currentPositionMs.value, nowNs)
+        }
+
+        if (clockAnchorRealtimeNs == 0L) {
+            return updateClockOutput(_currentPositionMs.value, nowNs)
+        }
+
+        val elapsedMs = ((nowNs - clockAnchorRealtimeNs) / 1_000_000.0 * _playbackSpeed.value).toLong()
+        val predictedPositionMs = clockAnchorPositionMs + elapsedMs
+        if (lastClockOutputRealtimeNs == 0L) {
+            return updateClockOutput(predictedPositionMs.coerceAtLeast(_currentPositionMs.value), nowNs)
+        }
+
+        val outputElapsedMs = ((nowNs - lastClockOutputRealtimeNs) / 1_000_000.0 * _playbackSpeed.value).toLong()
+        val maxAdvanceMs = lastClockOutputMs + outputElapsedMs + 8L
+        val smoothedPositionMs = predictedPositionMs
+            .coerceAtLeast(lastClockOutputMs)
+            .coerceAtMost(maxAdvanceMs.coerceAtLeast(_currentPositionMs.value))
+
+        return updateClockOutput(smoothedPositionMs, nowNs)
+    }
     override fun isPlaying(): Boolean = _isPlaying.value
     override fun playbackSpeed(): Float = _playbackSpeed.value
 
@@ -256,6 +285,10 @@ class MpvPlayerManager(private val context: Context) :
             instance.destroy()
         }
         mpv = null
+        clockAnchorPositionMs = 0L
+        clockAnchorRealtimeNs = 0L
+        lastClockOutputMs = 0L
+        lastClockOutputRealtimeNs = 0L
         _isPlaying.value = false
         _currentPositionMs.value = 0
         _durationMs.value = 0
@@ -266,12 +299,15 @@ class MpvPlayerManager(private val context: Context) :
     private fun onPropertyChanged(property: String, value: Double) {
         when (property) {
             "time-pos" -> {
-                _currentPositionMs.value = (value * 1000).toLong()
-                notifyListeners(PlayerEvent.PositionChanged((value * 1000).toLong()))
+                val positionMs = (value * 1000).toLong()
+                _currentPositionMs.value = positionMs
+                updateClockAnchor(positionMs)
+                notifyListeners(PlayerEvent.PositionChanged(positionMs))
             }
             "duration" -> _durationMs.value = (value * 1000).toLong()
             "speed" -> {
                 _playbackSpeed.value = value.toFloat()
+                updateClockAnchor(_currentPositionMs.value)
                 notifyListeners(PlayerEvent.SpeedChanged(value.toFloat()))
             }
         }
@@ -282,15 +318,28 @@ class MpvPlayerManager(private val context: Context) :
             "pause" -> {
                 val playing = !value
                 _isPlaying.value = playing
+                updateClockAnchor(_currentPositionMs.value)
                 notifyListeners(PlayerEvent.PlayStateChanged(playing))
             }
             "eof-reached" -> {
                 if (value) {
                     _isPlaying.value = false
+                    updateClockAnchor(_currentPositionMs.value)
                     notifyListeners(PlayerEvent.PlaybackEnded)
                 }
             }
         }
+    }
+
+    private fun updateClockAnchor(positionMs: Long) {
+        clockAnchorPositionMs = positionMs
+        clockAnchorRealtimeNs = SystemClock.elapsedRealtimeNanos()
+    }
+
+    private fun updateClockOutput(positionMs: Long, nowNs: Long): Long {
+        lastClockOutputMs = positionMs
+        lastClockOutputRealtimeNs = nowNs
+        return positionMs
     }
 
     private fun onPropertyChanged(property: String, value: Long) {

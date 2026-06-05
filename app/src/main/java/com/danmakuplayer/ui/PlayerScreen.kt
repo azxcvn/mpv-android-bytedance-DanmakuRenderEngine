@@ -14,12 +14,16 @@ import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.ArrowBack
 import androidx.compose.material.icons.filled.ClosedCaptionOff
 import androidx.compose.material.icons.filled.FastForward
@@ -27,10 +31,16 @@ import androidx.compose.material.icons.filled.FastRewind
 import androidx.compose.material.icons.filled.Pause
 import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material.icons.filled.ShutterSpeed
+import androidx.compose.material.icons.filled.Tune
+import androidx.compose.material.icons.filled.Settings
+import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.LinearProgressIndicator
+import androidx.compose.material3.Slider
+import androidx.compose.material3.SliderDefaults
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
@@ -48,12 +58,15 @@ import androidx.compose.ui.platform.LocalView
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.viewinterop.AndroidView
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.core.view.WindowCompat
 import androidx.core.view.WindowInsetsCompat
 import androidx.core.view.WindowInsetsControllerCompat
 import com.danmakuplayer.PlayerViewModel
 import com.danmakuplayer.manager.MpvSurfaceView
 import com.danmakuplayer.overlay.SimpleOverlayHost
+import com.danmaku.flow.model.DensityMode
 import kotlinx.coroutines.delay
 
 /**
@@ -69,10 +82,29 @@ fun PlayerScreen(viewModel: PlayerViewModel, onBack: () -> Unit) {
     val durationMs by viewModel.durationMs.collectAsState()
     val isAnime4K by viewModel.isAnime4KEnabled.collectAsState()
     val danmakuVisible by viewModel.danmakuVisible.collectAsState()
+    val densityMode by viewModel.densityMode.collectAsState()
+    val danmakuScale by viewModel.danmakuScale.collectAsState()
+    val danmakuSpeed by viewModel.danmakuSpeed.collectAsState()
+    val danmakuAlpha by viewModel.danmakuAlpha.collectAsState()
+    val danmakuStroke by viewModel.danmakuStroke.collectAsState()
     val mpvInstance = remember { viewModel.playerManager.mpvInstance }
     val view = LocalView.current
     val context = LocalContext.current
     var controlsVisible by remember { mutableStateOf(true) }
+    var showDensityDialog by remember { mutableStateOf(false) }
+    var showStyleDialog by remember { mutableStateOf(false) }
+
+    // 弹幕文件选择器
+    val danmakuPickerLauncher = rememberLauncherForActivityResult(
+        ActivityResultContracts.OpenDocument()
+    ) { uri ->
+        uri?.let {
+            val inputStream = context.contentResolver.openInputStream(it) ?: return@let
+            val tmpFile = java.io.File(context.cacheDir, "danmaku.xml")
+            tmpFile.outputStream().use { out -> inputStream.copyTo(out) }
+            viewModel.loadDanmaku(tmpFile.absolutePath)
+        }
+    }
 
     // 沉浸式全屏
     DisposableEffect(Unit) {
@@ -155,6 +187,19 @@ fun PlayerScreen(viewModel: PlayerViewModel, onBack: () -> Unit) {
                             verticalAlignment = Alignment.CenterVertically,
                             horizontalArrangement = Arrangement.Center
                         ) {
+                            // 加载弹幕文件按钮
+                            IconButton(onClick = {
+                                danmakuPickerLauncher.launch(arrayOf("text/xml", "application/xml", "*/*"))
+                            }, modifier = Modifier.size(36.dp)) {
+                                Icon(
+                                    Icons.Default.Add, "加载弹幕",
+                                    tint = Color.White.copy(alpha = 0.7f),
+                                    modifier = Modifier.size(18.dp)
+                                )
+                            }
+
+                            Spacer(Modifier.width(4.dp))
+
                             // 弹幕图标按钮
                             IconButton(onClick = {
                                 viewModel.toggleDanmaku()
@@ -207,6 +252,32 @@ fun PlayerScreen(viewModel: PlayerViewModel, onBack: () -> Unit) {
                                     modifier = Modifier.size(20.dp)
                                 )
                             }
+
+                            Spacer(Modifier.width(8.dp))
+
+                            // 密度模式切换按钮
+                            IconButton(onClick = {
+                                showDensityDialog = true
+                            }, modifier = Modifier.size(36.dp)) {
+                                Icon(
+                                    Icons.Default.Tune, "弹幕密度",
+                                    tint = Color(0xFFFF6B35),
+                                    modifier = Modifier.size(20.dp)
+                                )
+                            }
+
+                            Spacer(Modifier.width(4.dp))
+
+                            // 弹幕样式设置按钮
+                            IconButton(onClick = {
+                                showStyleDialog = true
+                            }, modifier = Modifier.size(36.dp)) {
+                                Icon(
+                                    Icons.Default.Settings, "弹幕样式",
+                                    tint = Color.White,
+                                    modifier = Modifier.size(20.dp)
+                                )
+                            }
                         }
 
                         // 时间（极小的文字）
@@ -220,6 +291,137 @@ fun PlayerScreen(viewModel: PlayerViewModel, onBack: () -> Unit) {
                 }
             }
         }
+
+        // 密度模式选择弹窗
+        if (showDensityDialog) {
+            AlertDialog(
+                onDismissRequest = { showDensityDialog = false },
+                containerColor = Color(0xDD222222),
+                titleContentColor = Color.White,
+                textContentColor = Color.White,
+                title = { Text("弹幕密度") },
+                text = {
+                    Column {
+                        densityOptions.forEach { (mode, label, desc) ->
+                            TextButton(
+                                onClick = {
+                                    viewModel.setDensityMode(mode)
+                                    showDensityDialog = false
+                                },
+                                modifier = Modifier.fillMaxWidth()
+                            ) {
+                                Row(
+                                    Modifier.fillMaxWidth(),
+                                    verticalAlignment = Alignment.CenterVertically
+                                ) {
+                                    Text(
+                                        if (densityMode == mode) "● " else "○ ",
+                                        color = if (densityMode == mode) Color(0xFFFF6B35) else Color.Gray,
+                                        fontSize = 14.sp
+                                    )
+                                    Column {
+                                        Text(label, color = Color.White, fontSize = 14.sp)
+                                        Text(desc, color = Color.White.copy(alpha = 0.5f), fontSize = 11.sp)
+                                    }
+                                }
+                            }
+                        }
+                    }
+                },
+                confirmButton = {
+                    TextButton(onClick = { showDensityDialog = false }) {
+                        Text("关闭", color = Color(0xFFFF6B35))
+                    }
+                }
+            )
+        }
+
+        // 弹幕样式设置弹窗
+        if (showStyleDialog) {
+            AlertDialog(
+                onDismissRequest = { showStyleDialog = false },
+                containerColor = Color(0xDD222222),
+                titleContentColor = Color.White,
+                textContentColor = Color.White,
+                title = { Text("弹幕样式") },
+                text = {
+                    Column(
+                        verticalArrangement = Arrangement.spacedBy(6.dp),
+                        modifier = Modifier
+                            .heightIn(max = 280.dp)
+                            .verticalScroll(rememberScrollState())
+                    ) {
+                        // 字号
+                        styleSlider("字号", danmakuScale, 0.5f, 2.0f, "x") {
+                            viewModel.setDanmakuScale(it)
+                        }
+                        // 速度
+                        styleSlider("速度", danmakuSpeed, 0.5f, 2.0f, "x") {
+                            viewModel.setDanmakuSpeed(it)
+                        }
+                        // 透明度
+                        styleSlider("透明度", danmakuAlpha, 0.2f, 1.0f, "") {
+                            viewModel.setDanmakuAlpha(it)
+                        }
+                        // 描边
+                        styleSlider("描边", danmakuStroke, 0f, 4f, "dp") {
+                            viewModel.setDanmakuStroke(it)
+                        }
+                    }
+                },
+                confirmButton = {
+                    TextButton(onClick = { showStyleDialog = false }) {
+                        Text("关闭", color = Color(0xFFFF6B35))
+                    }
+                }
+            )
+        }
+    }
+}
+
+/** 密度模式选项定义 */
+private val densityOptions = listOf(
+    Triple(DensityMode.Strict, "最少", "宁可丢弃，不重叠"),
+    Triple(DensityMode.Balanced, "默认", "阅读体验与数量平衡"),
+    Triple(DensityMode.Crowded, "最多", "优先显示更多弹幕"),
+)
+
+/**
+ * 样式滑块组件
+ */
+@Composable
+private fun styleSlider(
+    label: String,
+    value: Float,
+    min: Float,
+    max: Float,
+    unit: String,
+    onValueChange: (Float) -> Unit
+) {
+    Column {
+        Row(
+            Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.SpaceBetween,
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Text(label, color = Color.White, fontSize = 13.sp)
+            Text(
+                "${String.format("%.1f", value)}$unit",
+                color = Color(0xFFFF6B35),
+                fontSize = 13.sp
+            )
+        }
+        Slider(
+            value = value,
+            onValueChange = onValueChange,
+            valueRange = min..max,
+            modifier = Modifier.fillMaxWidth(),
+            colors = SliderDefaults.colors(
+                thumbColor = Color(0xFFFF6B35),
+                activeTrackColor = Color(0xFFFF6B35),
+                inactiveTrackColor = Color(0x44FFFFFF)
+            )
+        )
     }
 }
 

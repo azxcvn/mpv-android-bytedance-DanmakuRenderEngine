@@ -4,17 +4,19 @@ package com.danmaku.flow.model
  * 活动弹幕
  *
  * 表示一条正在屏幕中显示或即将显示的弹幕。
- * 对应融合方案 4.7 节
+ * P1 将字段改为 var 以支持对象池复用。
+ *
+ * 对应融合方案 4.7 节和 9.2 第 4 项
  */
-data class ActiveDanmaku(
-    /** 原始弹幕数据 */
-    val item: DanmakuItem,
+class ActiveDanmaku(
+    /** 原始弹幕数据（对象池复用时可变） */
+    var item: DanmakuItem,
     /** 开始显示时间（ms） */
-    val startMs: Long,
+    var startMs: Long,
     /** 结束显示时间（ms） */
-    val endMs: Long,
+    var endMs: Long,
     /** 分配到的轨道索引 */
-    val trackIndex: Int,
+    var trackIndex: Int,
     /** 入场时捕获的样式快照 */
-    val styleSnapshot: RenderStyleSnapshot
+    var styleSnapshot: RenderStyleSnapshot
 )

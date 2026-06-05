@@ -16,9 +16,9 @@ data class GlobalDanmakuStyle(
     /** 描边宽度 dp */
     val strokeWidthDp: Float = 2f,
     /** 同屏最大弹幕数 */
-    val maxVisibleCount: Int = 60,
+    val maxVisibleCount: Int = 180,
     /** 密度模式 */
-    val densityMode: DensityMode = DensityMode.Balanced,
+    val densityMode: DensityMode = DensityMode.Crowded,
     /** 是否启用 Anime4K 感知 */
     val anime4kAware: Boolean = false
 )

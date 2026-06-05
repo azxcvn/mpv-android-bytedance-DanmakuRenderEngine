@@ -4,11 +4,7 @@ import android.graphics.Bitmap
 import android.graphics.Canvas
 import android.graphics.Color
 import android.graphics.Paint
-import android.graphics.PorterDuff
-import android.graphics.RectF
 import android.graphics.Typeface
-import android.text.Layout
-import android.text.StaticLayout
 import android.text.TextPaint
 
 /**
@@ -22,16 +18,21 @@ class GlyphCache {
     private data class CacheKey(
         val text: String,
         val textSizePx: Int,
-        val color: Int
+        val color: Int,
+        val strokeWidthPx: Int
     )
 
     internal data class CacheEntry(
         val bitmap: Bitmap,
         val width: Int,
-        val height: Int
+        val height: Int,
+        val baselineOffset: Float
     )
 
     private val cache = HashMap<CacheKey, CacheEntry>(128)
+
+    /** 缓存上限，超过时触发 LRU 淘汰（防止大量不同颜色/字号导致 OOM） */
+    private val maxCacheSize = 300
 
     private val textPaint = TextPaint(Paint.ANTI_ALIAS_FLAG).apply {
         color = Color.WHITE
@@ -55,7 +56,7 @@ class GlyphCache {
         color: Int,
         strokeWidthPx: Float
     ): CacheEntry {
-        val key = CacheKey(text, textSizePx.toInt(), color)
+        val key = CacheKey(text, textSizePx.toInt(), color, strokeWidthPx.toInt())
         cache[key]?.let { return it }
 
         // 计算文字尺寸
@@ -71,21 +72,45 @@ class GlyphCache {
 
         val bitmap = Bitmap.createBitmap(bmpWidth, bmpHeight, Bitmap.Config.ARGB_8888)
         val canvas = Canvas(bitmap)
+        val baselineOffset = padding - fm.ascent
 
         // 描边（在文字下面）
         if (strokeWidthPx > 0f) {
             strokePaint.textSize = textSizePx
             strokePaint.strokeWidth = strokeWidthPx * 2
             strokePaint.typeface = Typeface.DEFAULT
-            canvas.drawText(text, padding, padding - fm.ascent, strokePaint)
+            canvas.drawText(text, padding, baselineOffset, strokePaint)
         }
 
         // 文字
-        canvas.drawText(text, padding, padding - fm.ascent, textPaint)
+        canvas.drawText(text, padding, baselineOffset, textPaint)
 
-        val entry = CacheEntry(bitmap, bmpWidth, bmpHeight)
+        val entry = CacheEntry(bitmap, bmpWidth, bmpHeight, baselineOffset)
+
+        // 缓存淘汰：超过上限时清空一半（简单 LRU 近似）
+        if (cache.size >= maxCacheSize) {
+            val evictCount = maxCacheSize / 2
+            val iterator = cache.entries.iterator()
+            var evicted = 0
+            while (iterator.hasNext() && evicted < evictCount) {
+                iterator.next().value.bitmap.recycle()
+                iterator.remove()
+                evicted++
+            }
+        }
+
         cache[key] = entry
         return entry
+    }
+
+    fun prefetch(
+        text: String,
+        textSizePx: Float,
+        color: Int,
+        strokeWidthPx: Float
+    ) {
+        if (text.isBlank()) return
+        getOrBake(text, textSizePx, color, strokeWidthPx)
     }
 
     /**
@@ -103,7 +128,7 @@ class GlyphCache {
     ) {
         val entry = getOrBake(text, textSizePx, color, strokeWidthPx)
         drawPaint.alpha = (alpha * 255).toInt().coerceIn(0, 255)
-        canvas.drawBitmap(entry.bitmap, x, y - (entry.height / 2f), drawPaint)
+        canvas.drawBitmap(entry.bitmap, x, y - entry.baselineOffset, drawPaint)
     }
 
     fun clear() {
