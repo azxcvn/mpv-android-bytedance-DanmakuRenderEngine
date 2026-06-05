@@ -6,8 +6,8 @@ import com.danmaku.flow.model.DanmakuRenderItem
 import com.danmaku.flow.model.DanmakuType
 import com.danmaku.flow.model.GlobalDanmakuStyle
 import com.danmaku.flow.model.RenderStyleSnapshot
+import com.danmaku.flow.bridge.api.PlayerEvent
 import com.danmaku.flow.parser.DanmakuRepository
-import com.danmakuplayer.bridge.PlayerEvent
 
 /**
  * 弹幕时间轴引擎
@@ -25,21 +25,21 @@ class DanmakuTimelineEngine : DanmakuEngine {
     // 配置参数
     companion object {
         /** 预读窗口 ms */
-        const val PREFETCH_MS = 2000L
+        const val PREFETCH_MS = 3000L
         /** 活动扫描跨度 ms（当前时间前后） */
         const val ACTIVE_SCAN_MS = 800L
         /** seek 后重建跨度 ms */
         const val SEEK_REBUILD_MS = 3000L
         /** 滚动弹幕默认停留时长 ms */
-        const val SCROLL_DURATION_MS = 8000L
+        const val SCROLL_DURATION_MS = 4000L
         /** 固定弹幕默认停留时长 ms */
         const val FIXED_DURATION_MS = 3000L
         /** 滚动轨道数 */
-        const val SCROLL_TRACK_COUNT = 12
+        const val SCROLL_TRACK_COUNT = 20
         /** 顶部固定轨道数 */
-        const val TOP_TRACK_COUNT = 4
+        const val TOP_TRACK_COUNT = 6
         /** 底部固定轨道数 */
-        const val BOTTOM_TRACK_COUNT = 4
+        const val BOTTOM_TRACK_COUNT = 6
     }
 
     private var repository: DanmakuRepository? = null
@@ -63,6 +63,16 @@ class DanmakuTimelineEngine : DanmakuEngine {
         this.scrollAllocator = TrackAllocator(SCROLL_TRACK_COUNT)
         this.topAllocator = TrackAllocator(TOP_TRACK_COUNT)
         this.bottomAllocator = TrackAllocator(BOTTOM_TRACK_COUNT)
+        this.activeStore.clear()
+        this.lastPositionMs = -1L
+        this.isSeeking = false
+    }
+
+    override fun setScreenSize(width: Int, height: Int) {
+        if (width > 0 && height > 0 && (width != screenWidth || height != screenHeight)) {
+            screenWidth = width
+            screenHeight = height
+        }
     }
 
     override fun onClockTick(positionMs: Long) {
@@ -121,8 +131,7 @@ class DanmakuTimelineEngine : DanmakuEngine {
 
             if (trackIndex < 0) continue // 无可用轨道
 
-            // 密度控制：超过上限时跳过
-            if (activeStore.size() >= currentStyle.maxVisibleCount) break
+            // 密度控制（P0 暂不限制，P1 引入三档模式）
 
             val styleSnapshot = RenderStyleSnapshot(
                 textSizePx = item.textSizeSp * currentStyle.scale * 2.5f, // sp -> px 粗略

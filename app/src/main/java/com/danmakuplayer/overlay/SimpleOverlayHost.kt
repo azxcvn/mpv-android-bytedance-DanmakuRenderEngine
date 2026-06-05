@@ -6,7 +6,7 @@ import android.graphics.Color
 import android.graphics.Paint
 import android.view.SurfaceHolder
 import android.view.SurfaceView
-import com.danmakuplayer.bridge.DanmakuOverlayHost
+import com.danmaku.flow.bridge.api.DanmakuOverlayHost
 
 /**
  * 弹幕叠加层宿主实现
@@ -21,6 +21,9 @@ class SimpleOverlayHost(
     private var holderReady = false
     private val bgPaint = Paint().apply { isAntiAlias = true }
 
+    /** Surface 就绪回调 */
+    var onSurfaceReady: (() -> Unit)? = null
+
     init {
         // 确保叠加层在视频 SurfaceView 之上
         setZOrderOnTop(true)
@@ -32,6 +35,8 @@ class SimpleOverlayHost(
         holderReady = true
         // 首次绘制测试图案
         drawTestPattern()
+        // 通知 Surface 已就绪
+        onSurfaceReady?.invoke()
     }
 
     override fun surfaceChanged(holder: SurfaceHolder, format: Int, w: Int, h: Int) {}

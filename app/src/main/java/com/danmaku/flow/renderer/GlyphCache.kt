@@ -25,7 +25,7 @@ class GlyphCache {
         val color: Int
     )
 
-    private data class CacheEntry(
+    internal data class CacheEntry(
         val bitmap: Bitmap,
         val width: Int,
         val height: Int
@@ -43,10 +43,13 @@ class GlyphCache {
         color = Color.BLACK
     }
 
+    /** 复用的绘制 Paint，避免每帧每条弹幕 new Paint */
+    private val drawPaint = Paint(Paint.FILTER_BITMAP_FLAG)
+
     /**
      * 获取预烘焙 Bitmap（不存在则创建）
      */
-    fun getOrBake(
+    internal fun getOrBake(
         text: String,
         textSizePx: Float,
         color: Int,
@@ -99,9 +102,8 @@ class GlyphCache {
         alpha: Float
     ) {
         val entry = getOrBake(text, textSizePx, color, strokeWidthPx)
-        val paint = Paint(Paint.FILTER_BITMAP_FLAG)
-        paint.alpha = (alpha * 255).toInt().coerceIn(0, 255)
-        canvas.drawBitmap(entry.bitmap, x, y - (entry.height / 2f), paint)
+        drawPaint.alpha = (alpha * 255).toInt().coerceIn(0, 255)
+        canvas.drawBitmap(entry.bitmap, x, y - (entry.height / 2f), drawPaint)
     }
 
     fun clear() {

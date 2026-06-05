@@ -1,4 +1,4 @@
-package com.danmakuplayer.bridge
+package com.danmaku.flow.bridge.api
 
 import com.danmaku.flow.model.DanmakuRenderItem
 

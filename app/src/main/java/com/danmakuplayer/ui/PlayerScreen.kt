@@ -108,6 +108,10 @@ fun PlayerScreen(viewModel: PlayerViewModel, onBack: () -> Unit) {
                 SimpleOverlayHost(ctx).also { host ->
                     // 将叠加层绑定到弹幕控制器
                     viewModel.attachDanmakuOverlay(host)
+                    // Surface 就绪后重新加载弹幕（解决 Surface 未创建时 load 失败的问题）
+                    host.onSurfaceReady = {
+                        viewModel.retryLoadDanmaku()
+                    }
                 }
             },
             modifier = Modifier.fillMaxSize()

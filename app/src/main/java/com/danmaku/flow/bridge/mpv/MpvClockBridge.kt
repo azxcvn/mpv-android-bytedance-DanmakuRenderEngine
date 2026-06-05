@@ -1,11 +1,12 @@
-package com.danmaku.flow.engine
+package com.danmaku.flow.bridge.mpv
 
 import android.view.Choreographer
+import com.danmaku.flow.bridge.api.PlayerClockProvider
+import com.danmaku.flow.bridge.api.PlayerEvent
+import com.danmaku.flow.bridge.api.PlayerEventSource
+import com.danmaku.flow.bridge.api.PlayerEventListener
+import com.danmaku.flow.engine.DanmakuEngine
 import com.danmaku.flow.model.DanmakuRenderItem
-import com.danmakuplayer.bridge.PlayerClockProvider
-import com.danmakuplayer.bridge.PlayerEvent
-import com.danmakuplayer.bridge.PlayerEventSource
-import com.danmakuplayer.bridge.PlayerEventListener
 
 /**
  * Mpv 时钟桥接
@@ -22,6 +23,7 @@ class MpvClockBridge(
 ) {
     private var running = false
     private var renderCallback: ((List<DanmakuRenderItem>) -> Unit)? = null
+    private var canvasSizeProvider: (() -> Pair<Int, Int>)? = null
 
     private val choreographer = Choreographer.getInstance()
 
@@ -31,10 +33,15 @@ class MpvClockBridge(
 
             val positionMs = clockProvider.currentPositionMs()
 
-            // 推送时钟
+            // 每帧同步实际画布尺寸到引擎（在 snapshot 前）
+            canvasSizeProvider?.invoke()?.let { (w, h) ->
+                if (w > 0 && h > 0) engine.setScreenSize(w, h)
+            }
+
+            // 推送时钟（每帧都推，保证时间准确）
             engine.onClockTick(positionMs)
 
-            // 获取快照并渲染
+            // 获取快照并渲染（跟随屏幕刷新率，不人为限帧）
             val snapshot = engine.snapshot()
             renderCallback?.invoke(snapshot)
 
@@ -52,11 +59,16 @@ class MpvClockBridge(
     /**
      * 启动时钟桥接
      * @param onRender 每帧渲染回调
+     * @param onCanvasSize 获取实际画布尺寸的回调
      */
-    fun start(onRender: (List<DanmakuRenderItem>) -> Unit) {
+    fun start(
+        onRender: (List<DanmakuRenderItem>) -> Unit,
+        onCanvasSize: () -> Pair<Int, Int> = { Pair(0, 0) }
+    ) {
         if (running) return
         running = true
         renderCallback = onRender
+        canvasSizeProvider = onCanvasSize
         eventSource.addListener(playerListener)
         choreographer.postFrameCallback(frameCallback)
     }
@@ -81,5 +93,6 @@ class MpvClockBridge(
         choreographer.removeFrameCallback(frameCallback)
         eventSource.removeListener(playerListener)
         renderCallback = null
+        canvasSizeProvider = null
     }
 }

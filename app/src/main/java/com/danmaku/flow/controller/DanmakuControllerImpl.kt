@@ -1,15 +1,16 @@
 package com.danmaku.flow.controller
 
+import com.danmaku.flow.bridge.api.DanmakuOverlayHost
+import com.danmaku.flow.bridge.api.PlayerClockProvider
+import com.danmaku.flow.bridge.api.PlayerEvent
+import com.danmaku.flow.bridge.api.PlayerEventSource
+import com.danmaku.flow.bridge.mpv.MpvClockBridge
 import com.danmaku.flow.engine.DanmakuEngine
 import com.danmaku.flow.engine.DanmakuTimelineEngine
-import com.danmaku.flow.engine.MpvClockBridge
 import com.danmaku.flow.model.GlobalDanmakuStyle
 import com.danmaku.flow.parser.BilibiliXmlParser
 import com.danmaku.flow.parser.DanmakuRepository
 import com.danmaku.flow.renderer.CanvasRenderer
-import com.danmakuplayer.bridge.DanmakuOverlayHost
-import com.danmakuplayer.bridge.PlayerClockProvider
-import com.danmakuplayer.bridge.PlayerEventSource
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
@@ -55,6 +56,10 @@ class DanmakuControllerImpl(
         val src = source ?: return
         val host = overlayHost ?: return
 
+        // 停止之前的桥接（防止重复加载）
+        clockBridge?.stop()
+        clockBridge = null
+
         // 异步解析
         CoroutineScope(Dispatchers.IO).launch {
             val parser = BilibiliXmlParser()
@@ -76,11 +81,14 @@ class DanmakuControllerImpl(
                 val bridge = MpvClockBridge(clockProvider, eventSource, engine)
                 clockBridge = bridge
 
-                bridge.start { snapshot ->
-                    if (visible) {
-                        renderer.render(clockProvider.currentPositionMs(), snapshot)
-                    }
-                }
+                bridge.start(
+                    onRender = { snapshot ->
+                        if (visible) {
+                            renderer.render(clockProvider.currentPositionMs(), snapshot)
+                        }
+                    },
+                    onCanvasSize = { Pair(renderer.canvasWidth, renderer.canvasHeight) }
+                )
             }
         }
     }
@@ -99,8 +107,8 @@ class DanmakuControllerImpl(
     }
 
     override fun seekTo(positionMs: Long) {
-        engine.onPlayerEvent(com.danmakuplayer.bridge.PlayerEvent.SeekStarted)
-        engine.onPlayerEvent(com.danmakuplayer.bridge.PlayerEvent.SeekEnded)
+        engine.onPlayerEvent(PlayerEvent.SeekStarted)
+        engine.onPlayerEvent(PlayerEvent.SeekEnded)
     }
 
     override fun updateStyle(style: GlobalDanmakuStyle) {

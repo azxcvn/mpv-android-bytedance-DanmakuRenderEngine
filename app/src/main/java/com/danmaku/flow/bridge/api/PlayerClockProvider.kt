@@ -1,4 +1,4 @@
-package com.danmakuplayer.bridge
+package com.danmaku.flow.bridge.api
 
 /**
  * 播放器时钟提供者

@@ -4,11 +4,11 @@ import android.graphics.Canvas
 import android.graphics.Color
 import android.graphics.Paint
 import android.graphics.PorterDuff
+import com.danmaku.flow.bridge.api.DanmakuOverlayHost
+import com.danmaku.flow.bridge.api.DanmakuRenderConfig
+import com.danmaku.flow.bridge.api.DanmakuRenderer
 import com.danmaku.flow.model.DanmakuRenderItem
 import com.danmaku.flow.model.DanmakuType
-import com.danmakuplayer.bridge.DanmakuOverlayHost
-import com.danmakuplayer.bridge.DanmakuRenderConfig
-import com.danmakuplayer.bridge.DanmakuRenderer
 
 /**
  * Canvas 弹幕渲染器
@@ -30,6 +30,12 @@ class CanvasRenderer : DanmakuRenderer {
     private val glyphCache = GlyphCache()
     private val measureCache = TextMeasureCache()
 
+    /** 实际画布尺寸（每帧从 Canvas 获取） */
+    var canvasWidth = 0
+        private set
+    var canvasHeight = 0
+        private set
+
     // 帧预算监控（P1 再细化）
     private var lastRenderTimeNs = 0L
     private var frameBudgetExceededCount = 0
@@ -47,6 +53,10 @@ class CanvasRenderer : DanmakuRenderer {
         val canvas = h.lockCanvas() ?: return
 
         try {
+            // 记录实际画布尺寸
+            canvasWidth = canvas.width
+            canvasHeight = canvas.height
+
             // 清空为透明
             canvas.drawColor(Color.TRANSPARENT, PorterDuff.Mode.CLEAR)
 

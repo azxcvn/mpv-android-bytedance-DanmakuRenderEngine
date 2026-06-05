@@ -70,6 +70,10 @@ class PlayerViewModel(application: Application) : AndroidViewModel(application) 
 
     /** 待加载的弹幕文件路径 */
     private var pendingDanmakuPath: String? = null
+    /** 已加载的弹幕源（用于 Surface 就绪后重试） */
+    private var currentDanmakuSource: DanmakuDataSource? = null
+    /** OverlayHost 引用 */
+    private var overlayHost: com.danmaku.flow.bridge.api.DanmakuOverlayHost? = null
 
     // === 播放控制 ===
 
@@ -142,16 +146,32 @@ class PlayerViewModel(application: Application) : AndroidViewModel(application) 
     /**
      * 当 OverlayHost 就绪后调用
      */
-    fun attachDanmakuOverlay(host: com.danmakuplayer.bridge.DanmakuOverlayHost) {
+    fun attachDanmakuOverlay(host: com.danmaku.flow.bridge.api.DanmakuOverlayHost) {
+        overlayHost = host
         danmakuController?.attach(host)
         attachPendingDanmaku()
+    }
+
+    /**
+     * Surface 就绪后重试加载（解决 Surface 未创建时 load 失败的问题）
+     */
+    fun retryLoadDanmaku() {
+        val controller = danmakuController ?: return
+        val source = currentDanmakuSource ?: return
+        val host = overlayHost ?: return
+        // 重新绑定并加载
+        controller.detach()
+        controller.attach(host)
+        controller.setSource(source)
+        controller.load()
     }
 
     private fun attachPendingDanmaku() {
         val path = pendingDanmakuPath ?: return
         val controller = danmakuController ?: return
         pendingDanmakuPath = null
-        controller.setSource(DanmakuDataSource.FilePath(path))
+        currentDanmakuSource = DanmakuDataSource.FilePath(path)
+        controller.setSource(currentDanmakuSource!!)
         controller.load()
     }
 

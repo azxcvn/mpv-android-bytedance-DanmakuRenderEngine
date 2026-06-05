@@ -1,7 +1,7 @@
 package com.danmaku.flow.controller
 
+import com.danmaku.flow.bridge.api.DanmakuOverlayHost
 import com.danmaku.flow.model.GlobalDanmakuStyle
-import com.danmakuplayer.bridge.DanmakuOverlayHost
 
 /**
  * 弹幕控制器接口
