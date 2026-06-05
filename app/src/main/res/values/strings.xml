@@ -1,0 +1,11 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="app_name">DanmakuPlayer</string>
+    <string name="open_file">打开视频</string>
+    <string name="play">播放</string>
+    <string name="pause">暂停</string>
+    <string name="fast_forward">快进</string>
+    <string name="fast_rewind">快退</string>
+    <string name="danmaku_toggle">弹幕</string>
+    <string name="anime4k_toggle">Anime4K</string>
+</resources>
