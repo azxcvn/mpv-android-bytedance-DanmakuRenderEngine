@@ -65,8 +65,8 @@ import androidx.core.view.WindowInsetsCompat
 import androidx.core.view.WindowInsetsControllerCompat
 import com.danmakuplayer.PlayerViewModel
 import com.danmakuplayer.manager.MpvSurfaceView
-import com.danmakuplayer.overlay.SimpleOverlayHost
-import com.danmaku.flow.model.DensityMode
+import com.bytedance.danmaku.render.engine.DanmakuView
+import com.danmakuplayer.model.DensityMode
 import kotlinx.coroutines.delay
 
 /**
@@ -134,16 +134,11 @@ fun PlayerScreen(viewModel: PlayerViewModel, onBack: () -> Unit) {
             modifier = Modifier.fillMaxSize()
         )
 
-        // 弹幕叠加层（透明 SurfaceView，在视频之上）
+        // 弹幕叠加层（字节跳动 DanmakuView，普通 View 叠加在视频之上）
         AndroidView(
             factory = { ctx ->
-                SimpleOverlayHost(ctx).also { host ->
-                    // 将叠加层绑定到弹幕控制器
-                    viewModel.attachDanmakuOverlay(host)
-                    // Surface 就绪后重新加载弹幕（解决 Surface 未创建时 load 失败的问题）
-                    host.onSurfaceReady = {
-                        viewModel.retryLoadDanmaku()
-                    }
+                DanmakuView(ctx).also { view ->
+                    viewModel.attachDanmakuView(view)
                 }
             },
             modifier = Modifier.fillMaxSize()
@@ -352,19 +347,19 @@ fun PlayerScreen(viewModel: PlayerViewModel, onBack: () -> Unit) {
                             .verticalScroll(rememberScrollState())
                     ) {
                         // 字号
-                        styleSlider("字号", danmakuScale, 0.5f, 2.0f, "x") {
+                        styleSlider("字号", danmakuScale, 0.3f, 3.0f, "x") {
                             viewModel.setDanmakuScale(it)
                         }
                         // 速度
-                        styleSlider("速度", danmakuSpeed, 0.5f, 2.0f, "x") {
+                        styleSlider("速度", danmakuSpeed, 0.3f, 3.0f, "x") {
                             viewModel.setDanmakuSpeed(it)
                         }
                         // 透明度
-                        styleSlider("透明度", danmakuAlpha, 0.2f, 1.0f, "") {
+                        styleSlider("透明度", danmakuAlpha, 0.1f, 1.0f, "") {
                             viewModel.setDanmakuAlpha(it)
                         }
                         // 描边
-                        styleSlider("描边", danmakuStroke, 0f, 4f, "dp") {
+                        styleSlider("描边", danmakuStroke, 0f, 8f, "dp") {
                             viewModel.setDanmakuStroke(it)
                         }
                     }

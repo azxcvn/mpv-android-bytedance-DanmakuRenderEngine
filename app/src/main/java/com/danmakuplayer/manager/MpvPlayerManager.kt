@@ -5,10 +5,10 @@ import android.os.SystemClock
 import android.view.Surface
 import `is`.xyz.mpv.MPV
 import `is`.xyz.mpv.MPVNode
-import com.danmaku.flow.bridge.api.PlayerClockProvider
-import com.danmaku.flow.bridge.api.PlayerEvent
-import com.danmaku.flow.bridge.api.PlayerEventSource
-import com.danmaku.flow.bridge.api.PlayerEventListener
+import com.danmakuplayer.bridge.api.PlayerClockProvider
+import com.danmakuplayer.bridge.api.PlayerEvent
+import com.danmakuplayer.bridge.api.PlayerEventSource
+import com.danmakuplayer.bridge.api.PlayerEventListener
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
