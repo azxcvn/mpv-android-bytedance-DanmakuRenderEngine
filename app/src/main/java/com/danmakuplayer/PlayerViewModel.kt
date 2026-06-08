@@ -59,6 +59,15 @@ class PlayerViewModel(application: Application) : AndroidViewModel(application) 
     private val _danmakuStroke = MutableStateFlow(2f)
     val danmakuStroke: StateFlow<Float> = _danmakuStroke.asStateFlow()
 
+    private val _scrollMaxLines = MutableStateFlow(0)
+    val scrollMaxLines: StateFlow<Int> = _scrollMaxLines.asStateFlow()
+
+    private val _topMaxLines = MutableStateFlow(0)
+    val topMaxLines: StateFlow<Int> = _topMaxLines.asStateFlow()
+
+    private val _bottomMaxLines = MutableStateFlow(0)
+    val bottomMaxLines: StateFlow<Int> = _bottomMaxLines.asStateFlow()
+
     private var currentDanmakuStyle = GlobalDanmakuStyle()
     private var playerInitialized = false
     private var pendingUri: Uri? = null
@@ -128,6 +137,37 @@ class PlayerViewModel(application: Application) : AndroidViewModel(application) 
     fun setDanmakuStroke(stroke: Float) {
         _danmakuStroke.value = stroke
         currentDanmakuStyle = currentDanmakuStyle.copy(strokeWidthDp = stroke)
+        danmakuAdapter?.updateStyle(currentDanmakuStyle)
+    }
+
+    fun setScrollMaxLines(lines: Int) {
+        _scrollMaxLines.value = lines
+        currentDanmakuStyle = currentDanmakuStyle.copy(scrollMaxLines = lines)
+        danmakuAdapter?.updateStyle(currentDanmakuStyle)
+    }
+
+    fun setTopMaxLines(lines: Int) {
+        _topMaxLines.value = lines
+        currentDanmakuStyle = currentDanmakuStyle.copy(topMaxLines = lines)
+        danmakuAdapter?.updateStyle(currentDanmakuStyle)
+    }
+
+    fun setBottomMaxLines(lines: Int) {
+        _bottomMaxLines.value = lines
+        currentDanmakuStyle = currentDanmakuStyle.copy(bottomMaxLines = lines)
+        danmakuAdapter?.updateStyle(currentDanmakuStyle)
+    }
+
+    fun resetDanmakuStyle() {
+        val defaults = GlobalDanmakuStyle()
+        _danmakuScale.value = defaults.scale
+        _danmakuSpeed.value = defaults.speedFactor
+        _danmakuAlpha.value = defaults.alpha
+        _danmakuStroke.value = defaults.strokeWidthDp
+        _scrollMaxLines.value = defaults.scrollMaxLines
+        _topMaxLines.value = defaults.topMaxLines
+        _bottomMaxLines.value = defaults.bottomMaxLines
+        currentDanmakuStyle = defaults.copy(densityMode = currentDanmakuStyle.densityMode)
         danmakuAdapter?.updateStyle(currentDanmakuStyle)
     }
 

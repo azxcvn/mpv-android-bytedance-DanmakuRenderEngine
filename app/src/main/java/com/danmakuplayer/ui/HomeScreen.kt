@@ -11,7 +11,6 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.PlayCircle
-import androidx.compose.material.icons.filled.ClosedCaption
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Icon
@@ -31,9 +30,7 @@ import androidx.compose.ui.unit.sp
  */
 @Composable
 fun HomeScreen(
-    onOpenFile: () -> Unit,
-    onLoadDanmaku: (() -> Unit)? = null,
-    danmakuLoaded: Boolean = false
+    onOpenFile: () -> Unit
 ) {
     Box(
         modifier = Modifier
@@ -83,32 +80,6 @@ fun HomeScreen(
                     fontSize = 16.sp,
                     fontWeight = FontWeight.Medium
                 )
-            }
-
-            // 弹幕文件按钮（可选）
-            if (onLoadDanmaku != null) {
-                Spacer(Modifier.height(16.dp))
-
-                Button(
-                    onClick = onLoadDanmaku,
-                    colors = ButtonDefaults.buttonColors(
-                        containerColor = if (danmakuLoaded) Color(0xFF4CAF50) else Color(0xFF2196F3)
-                    ),
-                    shape = RoundedCornerShape(16.dp),
-                    modifier = Modifier.size(width = 200.dp, height = 44.dp)
-                ) {
-                    Icon(
-                        Icons.Default.ClosedCaption,
-                        contentDescription = null,
-                        modifier = Modifier.size(20.dp)
-                    )
-                    Spacer(Modifier.size(8.dp))
-                    Text(
-                        text = if (danmakuLoaded) "弹幕已加载" else "加载弹幕文件",
-                        fontSize = 14.sp,
-                        fontWeight = FontWeight.Medium
-                    )
-                }
             }
         }
     }

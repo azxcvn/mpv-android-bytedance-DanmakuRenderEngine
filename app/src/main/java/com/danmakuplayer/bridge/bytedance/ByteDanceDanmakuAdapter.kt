@@ -9,8 +9,10 @@ import com.danmakuplayer.bridge.api.PlayerEventListener
 import com.danmakuplayer.bridge.api.PlayerEventSource
 import com.danmakuplayer.model.DanmakuItem
 import com.danmakuplayer.model.DanmakuType
+import com.danmakuplayer.model.DensityMode
 import com.danmakuplayer.model.GlobalDanmakuStyle
 import com.bytedance.danmaku.render.engine.render.draw.text.TextData
+import android.graphics.Color
 import com.bytedance.danmaku.render.engine.utils.LAYER_TYPE_SCROLL
 import com.bytedance.danmaku.render.engine.utils.LAYER_TYPE_TOP_CENTER
 import com.bytedance.danmaku.render.engine.utils.LAYER_TYPE_BOTTOM_CENTER
@@ -196,12 +198,41 @@ class ByteDanceDanmakuAdapter(
             .coerceIn(2000L, 30000L)
 
         // === 透明度 ===
-        // alpha 0.0~1.0 → ByteDance 0~255
+        // alpha 0.0~1.0 → ByteDance 0~255，应用到 View.alpha
         config.common.alpha = (style.alpha * 255).toInt().coerceIn(0, 255)
 
         // === 描边 ===
         // strokeWidthDp=2.0 → 2.75px（字节默认），0 → 0px，5.0 → 6.875px
         config.text.strokeWidth = style.strokeWidthDp * DEFAULT_STROKE_WIDTH / 2f
+        // 描边颜色使用不透明黑色，避免与 View.alpha 叠加导致透明度异常
+        // （引擎默认 Color.argb(97,0,0,0) 本身就是半透明的，再乘 View.alpha 会更透明）
+        config.text.strokeColor = Color.argb(255, 0, 0, 0)
+
+        // === 密度/缓冲区优化（影响帧率） ===
+        // 减少缓冲区大小可降低每帧排版计算量，提升帧率
+        when (style.densityMode) {
+            DensityMode.Strict -> {
+                config.scroll.bufferSize = 4
+                config.scroll.itemMargin = 48f
+                config.top.bufferSize = 2
+                config.bottom.bufferSize = 2
+            }
+            DensityMode.Balanced -> {
+                config.scroll.bufferSize = 8
+                config.scroll.itemMargin = 24f
+                config.top.bufferSize = 4
+                config.bottom.bufferSize = 4
+            }
+            DensityMode.Crowded -> {
+                config.scroll.bufferSize = 16
+                config.scroll.itemMargin = 12f
+                config.top.bufferSize = 6
+                config.bottom.bufferSize = 6
+            }
+        }
+
+        // === 空屏暂停刷新 ===
+        config.common.pauseInvalidateWhenBlank = true
 
         // === 更新行数 ===
         danmakuView?.let { view ->
@@ -223,20 +254,35 @@ class ByteDanceDanmakuAdapter(
         val marginTop = config.scroll.marginTop
 
         val availableHeight = viewHeight - marginTop
-        val scrollLineCount = if (lineHeight + lineMargin > 0) {
+        val autoScrollLines = if (lineHeight + lineMargin > 0) {
             (availableHeight / (lineHeight + lineMargin)).toInt().coerceIn(1, 30)
         } else {
             4
         }
+
+        // 如果用户设了最大行数则取较小值，否则自动填满
+        val scrollLineCount = if (currentStyle.scrollMaxLines > 0) {
+            autoScrollLines.coerceAtMost(currentStyle.scrollMaxLines)
+        } else {
+            autoScrollLines
+        }
         config.scroll.lineCount = scrollLineCount
 
-        // 顶部/底部固定弹幕分配约 1/4 的行数
-        val fixedLineCount = (scrollLineCount / 4).coerceIn(1, 6)
-        config.top.lineCount = fixedLineCount
-        config.bottom.lineCount = fixedLineCount
+        // 顶部/底部固定弹幕
+        val autoFixedLines = (autoScrollLines / 4).coerceIn(1, 6)
+        config.top.lineCount = if (currentStyle.topMaxLines > 0) {
+            autoFixedLines.coerceAtMost(currentStyle.topMaxLines)
+        } else {
+            autoFixedLines
+        }
+        config.bottom.lineCount = if (currentStyle.bottomMaxLines > 0) {
+            autoFixedLines.coerceAtMost(currentStyle.bottomMaxLines)
+        } else {
+            autoFixedLines
+        }
         config.top.lineHeight = config.scroll.lineHeight
         config.bottom.lineHeight = config.scroll.lineHeight
 
-        Log.d(TAG, "View height=$viewHeight, lineHeight=$lineHeight, scrollLines=$scrollLineCount, fixedLines=$fixedLineCount")
+        Log.d(TAG, "View height=$viewHeight, lineHeight=$lineHeight, scrollLines=$scrollLineCount, topLines=${config.top.lineCount}, bottomLines=${config.bottom.lineCount}")
     }
 }

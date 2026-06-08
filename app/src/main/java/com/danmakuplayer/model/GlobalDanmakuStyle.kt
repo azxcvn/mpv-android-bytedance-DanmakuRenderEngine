@@ -20,5 +20,11 @@ data class GlobalDanmakuStyle(
     /** 密度模式 */
     val densityMode: DensityMode = DensityMode.Crowded,
     /** 是否启用 Anime4K 感知 */
-    val anime4kAware: Boolean = false
+    val anime4kAware: Boolean = false,
+    /** 滚动弹幕最大行数，0 表示自动（填满屏幕） */
+    val scrollMaxLines: Int = 0,
+    /** 顶部弹幕最大行数，0 表示自动 */
+    val topMaxLines: Int = 0,
+    /** 底部弹幕最大行数，0 表示自动 */
+    val bottomMaxLines: Int = 0
 )

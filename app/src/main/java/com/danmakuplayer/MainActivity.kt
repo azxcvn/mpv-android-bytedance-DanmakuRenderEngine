@@ -78,11 +78,7 @@ class MainActivity : ComponentActivity() {
                 HomeScreen(
                     onOpenFile = {
                         openVideoLauncher.launch(arrayOf("video/*"))
-                    },
-                    onLoadDanmaku = {
-                        openDanmakuLauncher.launch(arrayOf("text/xml", "application/xml", "*/*"))
-                    },
-                    danmakuLoaded = danmakuPath != null
+                    }
                 )
             }
         }

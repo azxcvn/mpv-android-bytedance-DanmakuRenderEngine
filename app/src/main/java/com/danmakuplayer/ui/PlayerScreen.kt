@@ -31,12 +31,10 @@ import androidx.compose.material.icons.filled.FastRewind
 import androidx.compose.material.icons.filled.Pause
 import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material.icons.filled.ShutterSpeed
-import androidx.compose.material.icons.filled.Tune
 import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
-import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.Slider
 import androidx.compose.material3.SliderDefaults
 import androidx.compose.material3.Text
@@ -66,7 +64,6 @@ import androidx.core.view.WindowInsetsControllerCompat
 import com.danmakuplayer.PlayerViewModel
 import com.danmakuplayer.manager.MpvSurfaceView
 import com.bytedance.danmaku.render.engine.DanmakuView
-import com.danmakuplayer.model.DensityMode
 import kotlinx.coroutines.delay
 
 /**
@@ -82,16 +79,17 @@ fun PlayerScreen(viewModel: PlayerViewModel, onBack: () -> Unit) {
     val durationMs by viewModel.durationMs.collectAsState()
     val isAnime4K by viewModel.isAnime4KEnabled.collectAsState()
     val danmakuVisible by viewModel.danmakuVisible.collectAsState()
-    val densityMode by viewModel.densityMode.collectAsState()
     val danmakuScale by viewModel.danmakuScale.collectAsState()
     val danmakuSpeed by viewModel.danmakuSpeed.collectAsState()
     val danmakuAlpha by viewModel.danmakuAlpha.collectAsState()
     val danmakuStroke by viewModel.danmakuStroke.collectAsState()
+    val scrollMaxLines by viewModel.scrollMaxLines.collectAsState()
+    val topMaxLines by viewModel.topMaxLines.collectAsState()
+    val bottomMaxLines by viewModel.bottomMaxLines.collectAsState()
     val mpvInstance = remember { viewModel.playerManager.mpvInstance }
     val view = LocalView.current
     val context = LocalContext.current
     var controlsVisible by remember { mutableStateOf(true) }
-    var showDensityDialog by remember { mutableStateOf(false) }
     var showStyleDialog by remember { mutableStateOf(false) }
 
     // 弹幕文件选择器
@@ -138,6 +136,8 @@ fun PlayerScreen(viewModel: PlayerViewModel, onBack: () -> Unit) {
         AndroidView(
             factory = { ctx ->
                 DanmakuView(ctx).also { view ->
+                    // 关闭软件层，确保使用默认硬件加速绘制（非 LAYER_TYPE_HARDWARE 缓存层）
+                    view.setLayerType(android.view.View.LAYER_TYPE_NONE, null)
                     viewModel.attachDanmakuView(view)
                 }
             },
@@ -164,14 +164,29 @@ fun PlayerScreen(viewModel: PlayerViewModel, onBack: () -> Unit) {
                     Column(
                         Modifier.fillMaxWidth().background(Color(0xAA000000)).padding(horizontal = 12.dp, vertical = 6.dp)
                     ) {
-                        // 进度条
+                        // 可拖动进度条
+                        val isSeeking by viewModel.isSeeking.collectAsState()
+                        val seekingPosition by viewModel.seekingPosition.collectAsState()
+                        val displayPosition = if (isSeeking) seekingPosition else positionMs
                         val progress = if (durationMs > 0)
-                            (positionMs.toFloat() / durationMs.toFloat()).coerceIn(0f, 1f) else 0f
-                        LinearProgressIndicator(
-                            progress = { progress },
-                            modifier = Modifier.fillMaxWidth().height(3.dp).clip(RoundedCornerShape(2.dp)),
-                            color = Color(0xFFFF6B35),
-                            trackColor = Color(0x66FFFFFF),
+                            (displayPosition.toFloat() / durationMs.toFloat()).coerceIn(0f, 1f) else 0f
+
+                        Slider(
+                            value = progress,
+                            onValueChange = { value ->
+                                val newPos = (value * durationMs).toLong()
+                                if (!isSeeking) viewModel.onSeekStart()
+                                viewModel.onSeek(newPos)
+                            },
+                            onValueChangeFinished = {
+                                viewModel.onSeekEnd(seekingPosition)
+                            },
+                            modifier = Modifier.fillMaxWidth().height(16.dp),
+                            colors = SliderDefaults.colors(
+                                thumbColor = Color(0xFFFF6B35),
+                                activeTrackColor = Color(0xFFFF6B35),
+                                inactiveTrackColor = Color(0x66FFFFFF)
+                            )
                         )
 
                         Spacer(Modifier.height(6.dp))
@@ -250,19 +265,6 @@ fun PlayerScreen(viewModel: PlayerViewModel, onBack: () -> Unit) {
 
                             Spacer(Modifier.width(8.dp))
 
-                            // 密度模式切换按钮
-                            IconButton(onClick = {
-                                showDensityDialog = true
-                            }, modifier = Modifier.size(36.dp)) {
-                                Icon(
-                                    Icons.Default.Tune, "弹幕密度",
-                                    tint = Color(0xFFFF6B35),
-                                    modifier = Modifier.size(20.dp)
-                                )
-                            }
-
-                            Spacer(Modifier.width(4.dp))
-
                             // 弹幕样式设置按钮
                             IconButton(onClick = {
                                 showStyleDialog = true
@@ -277,7 +279,7 @@ fun PlayerScreen(viewModel: PlayerViewModel, onBack: () -> Unit) {
 
                         // 时间（极小的文字）
                         Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
-                            Text(formatTime(positionMs), color = Color.White.copy(alpha = 0.6f), fontSize = 10.sp)
+                            Text(formatTime(displayPosition), color = Color.White.copy(alpha = 0.6f), fontSize = 10.sp)
                             Text(formatTime(durationMs), color = Color.White.copy(alpha = 0.6f), fontSize = 10.sp)
                         }
 
@@ -285,50 +287,6 @@ fun PlayerScreen(viewModel: PlayerViewModel, onBack: () -> Unit) {
                     }
                 }
             }
-        }
-
-        // 密度模式选择弹窗
-        if (showDensityDialog) {
-            AlertDialog(
-                onDismissRequest = { showDensityDialog = false },
-                containerColor = Color(0xDD222222),
-                titleContentColor = Color.White,
-                textContentColor = Color.White,
-                title = { Text("弹幕密度") },
-                text = {
-                    Column {
-                        densityOptions.forEach { (mode, label, desc) ->
-                            TextButton(
-                                onClick = {
-                                    viewModel.setDensityMode(mode)
-                                    showDensityDialog = false
-                                },
-                                modifier = Modifier.fillMaxWidth()
-                            ) {
-                                Row(
-                                    Modifier.fillMaxWidth(),
-                                    verticalAlignment = Alignment.CenterVertically
-                                ) {
-                                    Text(
-                                        if (densityMode == mode) "● " else "○ ",
-                                        color = if (densityMode == mode) Color(0xFFFF6B35) else Color.Gray,
-                                        fontSize = 14.sp
-                                    )
-                                    Column {
-                                        Text(label, color = Color.White, fontSize = 14.sp)
-                                        Text(desc, color = Color.White.copy(alpha = 0.5f), fontSize = 11.sp)
-                                    }
-                                }
-                            }
-                        }
-                    }
-                },
-                confirmButton = {
-                    TextButton(onClick = { showDensityDialog = false }) {
-                        Text("关闭", color = Color(0xFFFF6B35))
-                    }
-                }
-            )
         }
 
         // 弹幕样式设置弹窗
@@ -343,7 +301,7 @@ fun PlayerScreen(viewModel: PlayerViewModel, onBack: () -> Unit) {
                     Column(
                         verticalArrangement = Arrangement.spacedBy(6.dp),
                         modifier = Modifier
-                            .heightIn(max = 280.dp)
+                            .heightIn(max = 420.dp)
                             .verticalScroll(rememberScrollState())
                     ) {
                         // 字号
@@ -362,11 +320,30 @@ fun PlayerScreen(viewModel: PlayerViewModel, onBack: () -> Unit) {
                         styleSlider("描边", danmakuStroke, 0f, 8f, "dp") {
                             viewModel.setDanmakuStroke(it)
                         }
+                        // 滚动弹幕最大行数
+                        lineCountSlider("滚动行数", scrollMaxLines, 20) {
+                            viewModel.setScrollMaxLines(it)
+                        }
+                        // 顶部弹幕最大行数
+                        lineCountSlider("顶部行数", topMaxLines, 10) {
+                            viewModel.setTopMaxLines(it)
+                        }
+                        // 底部弹幕最大行数
+                        lineCountSlider("底部行数", bottomMaxLines, 10) {
+                            viewModel.setBottomMaxLines(it)
+                        }
                     }
                 },
                 confirmButton = {
-                    TextButton(onClick = { showStyleDialog = false }) {
-                        Text("关闭", color = Color(0xFFFF6B35))
+                    Row {
+                        TextButton(onClick = {
+                            viewModel.resetDanmakuStyle()
+                        }) {
+                            Text("重置", color = Color.White.copy(alpha = 0.6f))
+                        }
+                        TextButton(onClick = { showStyleDialog = false }) {
+                            Text("关闭", color = Color(0xFFFF6B35))
+                        }
                     }
                 }
             )
@@ -374,12 +351,6 @@ fun PlayerScreen(viewModel: PlayerViewModel, onBack: () -> Unit) {
     }
 }
 
-/** 密度模式选项定义 */
-private val densityOptions = listOf(
-    Triple(DensityMode.Strict, "最少", "宁可丢弃，不重叠"),
-    Triple(DensityMode.Balanced, "默认", "阅读体验与数量平衡"),
-    Triple(DensityMode.Crowded, "最多", "优先显示更多弹幕"),
-)
 
 /**
  * 样式滑块组件
@@ -410,6 +381,44 @@ private fun styleSlider(
             value = value,
             onValueChange = onValueChange,
             valueRange = min..max,
+            modifier = Modifier.fillMaxWidth(),
+            colors = SliderDefaults.colors(
+                thumbColor = Color(0xFFFF6B35),
+                activeTrackColor = Color(0xFFFF6B35),
+                inactiveTrackColor = Color(0x44FFFFFF)
+            )
+        )
+    }
+}
+
+/**
+ * 行数滑块组件，0 表示自动
+ */
+@Composable
+private fun lineCountSlider(
+    label: String,
+    value: Int,
+    max: Int,
+    onValueChange: (Int) -> Unit
+) {
+    Column {
+        Row(
+            Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.SpaceBetween,
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Text(label, color = Color.White, fontSize = 13.sp)
+            Text(
+                if (value == 0) "自动" else "${value}行",
+                color = Color(0xFFFF6B35),
+                fontSize = 13.sp
+            )
+        }
+        Slider(
+            value = value.toFloat(),
+            onValueChange = { onValueChange(it.toInt()) },
+            valueRange = 0f..max.toFloat(),
+            steps = max - 1,
             modifier = Modifier.fillMaxWidth(),
             colors = SliderDefaults.colors(
                 thumbColor = Color(0xFFFF6B35),
